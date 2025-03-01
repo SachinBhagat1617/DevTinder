@@ -3,15 +3,15 @@ const User = require("../models/user");
 const userAuth = async (req, res, next) => {
   try {
     const cookies = req.cookies; // note here use cookies but while sending response use res.cookie
-    const { token } = cookies;
-    // console.log(token);
-    if (!token) {
+    const { accessToken } = cookies;
+     console.log(accessToken);
+    if (!accessToken) {
       throw new Error("LogIn again Token not found");
     }
 
-    const decodedMessage = await jwt.verify(token, "thisIsMySecretKey");
+    const decodedMessage = await jwt.verify(accessToken, "thisIsMySecretKey");
 
-    // console.log(decodedMessage);
+     
     const { _id } = decodedMessage;
     const user = await User.findById(_id);
     if (!user) {

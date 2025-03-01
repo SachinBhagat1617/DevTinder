@@ -53,6 +53,9 @@ const userSchema = new mongoose.Schema(
     skills: {
       type: [String],
     },
+    refreshToken: {
+      type:String,
+    },
     forgotPasswordToken: String,
     forgotPasswordExpiry: Date,
   },
@@ -62,11 +65,25 @@ const userSchema = new mongoose.Schema(
 );
 // don't write arrow fn here because you are using this keyword which will give you error
 userSchema.methods.getJwt = async function () {
-  const token = await jwt.sign({ _id: this._id }, "thisIsMySecretKey", {
-    expiresIn: "1d",
-  });
+  const token = await jwt.sign(
+    { _id: this._id },
+    process.env.ACCESS_TOKEN_SECRET,
+    {
+      expiresIn: "1m",
+    }
+  );
   return token;
 };
+userSchema.methods.generateRefreshToken = async function () {
+  const token = await jwt.sign(
+    { _id: this._id },
+    process.env.REFRESH_ACCESS_TOKEN_SECRET,
+    {
+      expiresIn: process.env.REFRESH_ACCESS_TOKEN_EXPIRY,
+    }
+  );
+  return token;
+}
 
 userSchema.methods.getForgotPasswordToken = async function () {
   const forgotToken = crypto.randomBytes(10).toString("hex");

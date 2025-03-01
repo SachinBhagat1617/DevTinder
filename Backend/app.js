@@ -2,11 +2,17 @@ require("dotenv").config();
 
 const express = require("express");
 const app = express(); // create an instance of express
-
+const cors=require('cors')
 const DBconnect = require("./src/config/database");
 const User = require("./src/models/user");
 const morgan = require("morgan");
 const cookieParser = require("cookie-parser");
+app.use(
+  cors({
+    origin: "http://localhost:5173",
+    credentials: true,
+  })
+);
 app.use(express.json()); //: This middleware is added to handle incoming requests that have a JSON body
 //(such as POST requests where data is being sent to the server). It converts the raw JSON data in the
 //request body into a JavaScript object, so you can easily access and manipulate the data in your route handlers.

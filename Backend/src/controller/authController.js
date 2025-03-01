@@ -4,6 +4,27 @@ const { validateSignUpData } = require("../utils/validation");
 const jwt = require("jsonwebtoken");
 const mailhelper = require("../utils/mailHelper");
 const crypto = require("crypto");
+
+
+const USER_SAFE_DATA = "firstName lastName photoUrl age gender about skills";
+
+const generateAccessAndRefreshToken = async (userId) => {
+  try {
+    const user = await User.findById(userId);
+    const accessToken = await user.getJwt();
+    const refreshToken = await user.generateRefreshToken();
+    user.refreshToken = refreshToken;
+    await user.save();
+    console.log({ accessToken, refreshToken });
+    return { accessToken, refreshToken };
+  } catch (error) {
+    throw new Error(
+      "Something went wrong while generating referesh and access token " +
+        error.message
+    );
+  }
+};
+
 const signUp = async (req, res) => {
   try {
     // validation of data  you should throw error because it
@@ -23,12 +44,12 @@ const signUp = async (req, res) => {
       age,
     });
     await user.save();
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       message: "User Added Successfully",
     });
   } catch (error) {
-    res.status(400).json({ success: false, message: `${error.message} ` });
+    return res.status(400).json({ success: false, message: `${error.message} ` });
   }
 };
 const userUpdate = async (req, res) => {
@@ -55,17 +76,19 @@ const userUpdate = async (req, res) => {
         .status(404)
         .json({ success: false, message: "User not found" });
     }
-    res.json({ success: true, message: "User updated Successfully" });
+    return res.json({ success: true, message: "User updated Successfully" });
   } catch (error) {
-    res.status(400).json({
+    res.status(401).json({
       success: false,
       message: `Update Failed: ${error.message}`,
     });
+    return; // Stop execution after sending response
   }
 };
 
 const logIn = async (req, res) => {
   const { emailId, password } = req.body;
+  console.log({ emailId, password });
   try {
     const user = await User.findOne({ emailId });
     if (!user) {
@@ -75,22 +98,90 @@ const logIn = async (req, res) => {
     const check = await bcrypt.compare(password, hashPassword);
     if (check) {
       //s1 for create a JWT token
-      const token = await user.getJwt(); // sending id with cookie
+      const { accessToken, refreshToken } = await generateAccessAndRefreshToken(
+        user._id
+      );
+      //console.log({ accessToken, refreshToken });
+      const loggedInUser = await User.findById(user._id).select(
+        "-password -refreshToken"
+      );
 
+      const options = {
+        httpOnly: true,
+        secure: true,
+      };
       //s2 Add the token to cookie and send the cookie to the user
-      res.cookie("token", token);
+      res
+        .cookie("accessToken", accessToken, options)
+        .cookie("refreshToken", refreshToken, options);
       res.status(200).json({
         success: true,
-        message: "User LogIn Successfully",
+        loggedInUser,
       });
+      return;
     } else {
       throw new Error("Invalid credentials");
     }
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+const refreshAccessToken = async (req, res) => {
+  try {
+    const incomingRefreshToken =
+      req.cookies.refreshToken || req.body.refreshToken;
+
+    if (!incomingRefreshToken) {
+      res.status(401).json({
+        success: false,
+        message: "refreshToken not found",
+      });
+    }
+    const decodedToken = jwt.verify(
+      incomingRefreshToken,
+      process.env.REFRESH_ACCESS_TOKEN_SECRET
+    );
+    console.log(decodedToken);
+
+    const user = await User.findById(decodedToken?._id);
+    // console.log(user)
+    if (!user) {
+      throw new Error("Invalid Refresh Token");
+    }
+    if (incomingRefreshToken !== user?.refreshToken) {
+      throw new Error("Refresh token is expired or used");
+    }
+    const { accessToken, refreshToken } = await generateAccessAndRefreshToken(
+      user._id
+    );
+    //console.log({ accessToken, refreshToken });
+    const loggedInUser = await User.findById(user._id).select(
+      "-password -refreshToken"
+    );
+
+    const options = {
+      httpOnly: true,
+      secure: true,
+    };
+
+    res
+      .cookie("accessToken", accessToken, options)
+      .cookie("refreshToken", refreshToken, options);
+    res.status(200).json({
+      success: true,
+      loggedInUser,
+    });
+    return; // Stop execution after sending response
   } catch (error) {
     res.status(400).json({
       success: false,
       message: error.message,
     });
+    return; //  Stop execution after sending response
   }
 };
 
@@ -149,7 +240,7 @@ const forgotPassword = async (req, res) => {
 const passwordReset = async (req, res) => {
   try {
     const token = req.params.token;
-    
+
     if (!token) {
       throw new Error("Token not found from URL");
     }
@@ -172,8 +263,8 @@ const passwordReset = async (req, res) => {
     await user.save();
     res.status(200).json({
       success: true,
-      message:"Password Changed"
-    })
+      message: "Password Changed",
+    });
   } catch (error) {
     res.status(400).json({
       success: false,
@@ -187,22 +278,22 @@ const updatePassword = async (req, res) => {
     const user = req.user;
     const { newPassword, confirmPassword } = req.body;
     if (newPassword !== confirmPassword) {
-      throw new Error("Password not matched")
+      throw new Error("Password not matched");
     }
     const hashPassword = await bcrypt.hash(confirmPassword, 10);
     user.password = hashPassword;
     await user.save();
     res.status(200).send({
       success: true,
-      message:"Password changed!"
-    })
+      message: "Password changed!",
+    });
   } catch (error) {
     res.status(400).json({
       success: false,
       message: error.message,
     });
   }
-}
+};
 
 module.exports = {
   signUp,
@@ -212,4 +303,5 @@ module.exports = {
   forgotPassword,
   passwordReset,
   updatePassword,
+  refreshAccessToken
 };
